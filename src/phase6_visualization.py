@@ -1,74 +1,138 @@
 """
-PHASE 6 — Visualization Engine
-Generates comparison charts for Equity Curves and Drawdown Profiles.
+Phase 6: Visualization
+--------------------------------------------------------------
+Generates the charts that actually tell the project's story:
+  1. Equity curve comparison (strategy vs buy-and-hold) per asset,
+     with the 2024+ holdout period shaded so it's visually obvious
+     which part of the chart is "out of sample."
+  2. Drawdown chart per asset — visualizes the max drawdown numbers
+     from Phase 5 instead of just stating them as a percentage.
+  3. A summary bar chart comparing Sharpe and Calmar ratios across
+     all assets, strategy vs buy-and-hold, side by side.
+
+All charts are saved as PNGs under reports/ so they can be dropped
+straight into a resume/portfolio writeup or README.
 """
 
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
-import os
+from pathlib import Path
 
-INPUT_DIR = "data_backtested"
-OUTPUT_DIR = "charts"
+HOLDOUT_START = "2024-01-01"
+ASSETS = ["gold", "crude", "sp500"]
+STARTING_CAPITAL = 100_000.0
+TRANSACTION_COST_PCT = 0.001  # must match Phase 4/5's assumption
 
-def generate_charts(df: pd.DataFrame, asset_name: str):
-    """Generates a two-panel chart showing equity curves and drawdown zones."""
-    
-    # 1. Compute daily drawdown percentages for both series
-    strat_peaks = df["equity"].cummax()
-    strat_dd = (df["equity"] - strat_peaks) / strat_peaks * 100
-    
-    bh_peaks = df["buy_hold_equity"].cummax()
-    bh_dd = (df["buy_hold_equity"] - bh_peaks) / bh_peaks * 100
+OUT_DIR = Path("reports")
 
-    # 2. Setup a two-panel plot (Top: Equity Curve, Bottom: Drawdown)
-    fig, (ax1, ax2) = plt.subplots(
-        2, 1, figsize=(12, 8), sharex=True, 
-        gridspec_kw={'height_ratios': [2, 1]}
-    )
 
-    # Top Panel: Equity Growth Simulation
-    ax1.plot(df.index, df["equity"], label="Strategy Portfolio", linewidth=2)
-    ax1.plot(df.index, df["buy_hold_equity"], label="Buy & Hold Benchmark", linestyle="--", linewidth=1.5)
-    ax1.set_title(f"{asset_name.upper()} Performance & Risk Profile (2015 - 2025)", fontsize=14, pad=15)
-    ax1.set_ylabel("Portfolio Value ($)", fontsize=11)
-    ax1.legend(loc="upper left")
-    ax1.grid(True, alpha=0.3)
+def buy_and_hold_equity_curve(price_df: pd.DataFrame, start_date) -> pd.Series:
+    window = price_df.loc[price_df.index >= start_date]
+    if len(window) < 2:
+        return pd.Series(dtype=float)
+    entry_price = window["Close"].iloc[0]
+    entry_cost = STARTING_CAPITAL * TRANSACTION_COST_PCT
+    units = (STARTING_CAPITAL - entry_cost) / entry_price
+    equity = units * window["Close"]
+    equity.name = "equity"
+    return equity
 
-    # Bottom Panel: Underwater Drawdown Zones
-    ax2.fill_between(df.index, strat_dd, 0, label="Strategy Drawdown", alpha=0.4)
-    ax2.fill_between(df.index, bh_dd, 0, label="Benchmark Drawdown", alpha=0.2)
-    ax2.set_ylabel("Drawdown (%)", fontsize=11)
-    ax2.set_xlabel("Date", fontsize=11)
-    ax2.legend(loc="lower left")
-    ax2.grid(True, alpha=0.3)
 
-    # Clean layout boundaries
-    plt.tight_layout()
-    
-    # Save the asset chart
-    out_path = os.path.join(OUTPUT_DIR, f"{asset_name}_backtest_results.png")
-    plt.savefig(out_path, dpi=300)
-    plt.close()
-    print(f"Successfully generated visual plot: {out_path}")
+def drawdown_series(equity: pd.Series) -> pd.Series:
+    running_max = equity.cummax()
+    return (equity / running_max - 1) * 100
+
+
+def plot_equity_comparison(asset: str, strat_equity: pd.Series, bh_equity: pd.Series):
+    fig, ax = plt.subplots(figsize=(11, 5))
+
+    ax.plot(strat_equity.index, strat_equity.values, label="Strategy", linewidth=1.6)
+    ax.plot(bh_equity.index, bh_equity.values, label="Buy & Hold", linewidth=1.6, alpha=0.85)
+
+    # Shade the holdout period so it's visually obvious what's out-of-sample
+    ax.axvspan(pd.Timestamp(HOLDOUT_START), strat_equity.index.max(),
+               color="gray", alpha=0.12, label="Holdout (2024-present)")
+
+    ax.set_title(f"{asset.upper()} — Equity Curve: Strategy vs Buy & Hold")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Portfolio Value ($)")
+    ax.legend()
+    ax.grid(alpha=0.3)
+
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / f"{asset}_equity_comparison.png", dpi=150)
+    plt.close(fig)
+
+
+def plot_drawdown_comparison(asset: str, strat_equity: pd.Series, bh_equity: pd.Series):
+    strat_dd = drawdown_series(strat_equity)
+    bh_dd = drawdown_series(bh_equity)
+
+    fig, ax = plt.subplots(figsize=(11, 4))
+
+    ax.fill_between(strat_dd.index, strat_dd.values, 0, label="Strategy", alpha=0.5)
+    ax.fill_between(bh_dd.index, bh_dd.values, 0, label="Buy & Hold", alpha=0.35)
+
+    ax.axvspan(pd.Timestamp(HOLDOUT_START), strat_dd.index.max(),
+               color="gray", alpha=0.10)
+
+    ax.set_title(f"{asset.upper()} — Drawdown Over Time (Strategy vs Buy & Hold)")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Drawdown (%)")
+    ax.legend()
+    ax.grid(alpha=0.3)
+
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / f"{asset}_drawdown_comparison.png", dpi=150)
+    plt.close(fig)
+
+
+def plot_summary_bars(risk_df: pd.DataFrame):
+    holdout_label = f"Holdout only ({HOLDOUT_START}-present)"
+    subset = risk_df[risk_df["period"] == holdout_label]
+
+    metrics_to_plot = ["sharpe", "calmar"]
+    fig, axes = plt.subplots(1, len(metrics_to_plot), figsize=(12, 4.5))
+
+    for ax, metric in zip(axes, metrics_to_plot):
+        pivot = subset.pivot(index="asset", columns="series", values=metric)
+        pivot = pivot.reindex(ASSETS)
+        pivot.plot(kind="bar", ax=ax, rot=0)
+        ax.set_title(f"{metric.capitalize()} Ratio — Holdout Period")
+        ax.set_ylabel(metric.capitalize())
+        ax.axhline(0, color="black", linewidth=0.8)
+        ax.grid(alpha=0.3, axis="y")
+
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "summary_sharpe_calmar_holdout.png", dpi=150)
+    plt.close(fig)
+
 
 def main():
-    if not os.path.exists(INPUT_DIR):
-        print(f"Error: {INPUT_DIR} folder not found. Please execute Phase 4 first.")
-        return
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    print("--- PHASE 6: Generating Performance Visualizations ---\n")
+    risk_df = pd.read_csv("data_processed/risk_metrics.csv")
 
-    for filename in os.listdir(INPUT_DIR):
-        if not filename.endswith("_backtest.csv"):
-            continue
+    for asset in ASSETS:
+        strat_equity = pd.read_csv(
+            f"data_processed/{asset}_equity_curve.csv", index_col="date", parse_dates=True
+        )["equity"]
 
-        name = filename.replace("_backtest.csv", "")
-        path = os.path.join(INPUT_DIR, filename)
+        price_df = pd.read_csv(
+            f"data_raw/{asset}.csv", index_col="Date", parse_dates=True
+        ).sort_index()
+        bh_equity = buy_and_hold_equity_curve(price_df, price_df.index.min())
 
-        # Load historical backtest runs
-        df = pd.read_csv(path, index_col="Date", parse_dates=True)
-        generate_charts(df, name)
+        plot_equity_comparison(asset, strat_equity, bh_equity)
+        plot_drawdown_comparison(asset, strat_equity, bh_equity)
+        print(f"{asset}: saved equity + drawdown charts")
+
+    plot_summary_bars(risk_df)
+    print("Saved summary Sharpe/Calmar bar chart")
+
+    print(f"\nAll charts saved to {OUT_DIR}/")
+
 
 if __name__ == "__main__":
     main()

@@ -1,10 +1,10 @@
 """
-PHASE 2 — Build MA crossover + RSI signals on top of the Phase 1 data.
+PHASE 2
 
 Strategy logic:
   - Trend filter: 20-day MA > 50-day MA  => uptrend
   - Entry (go long): uptrend AND RSI crosses back above 30 (recovering from oversold)
-  - Exit (go flat):  trend flips down     OR RSI crosses above 70 (overbought)
+  - Exit (go flat):  trend flips down  OR RSI crosses above 70 (overbought)
 """
 
 import pandas as pd

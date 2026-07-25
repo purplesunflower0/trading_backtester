@@ -38,7 +38,7 @@ def build_signals(df: pd.DataFrame, ma_short: int, ma_long: int,
             in_position = False
         position[i] = 1 if in_position else 0
 
-    # --- THE FIX: Aligning index and shifting to prevent time-travel ---
+    # Aligning index and shifting to prevent time-travel
     df["position"] = position                                
     df["position"] = df["position"].shift(1).fillna(0)       
     df["signal"] = df["position"].diff().fillna(0)           

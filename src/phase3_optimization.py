@@ -1,5 +1,5 @@
 """
-PHASE 3 — Parameter Optimization (Grid Search with Walk-Forward Validation)
+PHASE 3Parameter Optimization (Grid Search with Walk-Forward Validation)
 """
 
 import pandas as pd
@@ -13,10 +13,13 @@ INPUT_FILE = "data_raw/sp500.csv"
 
 def evaluate_returns(df):
     """Calculates a rough cumulative return for optimization sorting."""
+    
     # Calculate daily percent change of the asset
     df["pct_change"] = df["Close"].pct_change().fillna(0)
+    
     # Strategy return = Daily change * our position (1 or 0)
     df["strategy_return"] = df["position"] * df["pct_change"]
+    
     # Return as a percentage
     return df["strategy_return"].sum() * 100 
 
@@ -59,7 +62,7 @@ def main():
     print(f"\n[WINNER] Best Parameters: {best_params[0]} Short / {best_params[1]} Long")
     print(f"Training Data Return: {best_return:.2f}%")
 
-    # 4. Out-of-Sample Validation (The "I didn't get lucky" test)
+    # 4. Out-of-Sample Validation ("I didn't get lucky" test)
     print("\nValidating on Unseen Test Data (2023-2025)...")
     validation_df = build_signals(test_df, ma_short=best_params[0], ma_long=best_params[1])
     val_return = evaluate_returns(validation_df)

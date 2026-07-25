@@ -18,7 +18,7 @@ OUTPUT_DIR = "data_raw"
 
 
 def pull_and_clean(ticker: str, name: str) -> pd.DataFrame:
-    """Download one ticker's daily OHLCV and do basic cleaning."""
+    """one ticker's daily OHLCV and basic cleaning."""
 
     print(f"Downloading {ticker} ({name}) ...")
 
@@ -36,7 +36,7 @@ def pull_and_clean(ticker: str, name: str) -> pd.DataFrame:
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     
-    # --- FIX: guard against real-world price anomalies (e.g. WTI crude going
+    # FIX: guard against real-world price anomalies (e.g. WTI crude going
     # negative on April 20, 2020 during the COVID demand collapse). A near-zero
     # or negative price breaks pct_change()-based return calculations downstream,
     # so we floor all price columns at a small positive value.
